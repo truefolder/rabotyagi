@@ -1,0 +1,42 @@
+﻿services:
+  postgres:
+    image: postgres:15
+    container_name: rabotyagi_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: rabotyagi_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app_network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d rabotyagi_db" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      
+  rabotyagi:
+    image: rabotyagi
+    build:
+      context: .
+      dockerfile: rabotyagi/Dockerfile
+    ports:
+      - "5000:8080"
+    networks:
+      - app_network
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+networks:
+  app_network:
+    driver: bridge
+    
+volumes:
+  postgres_data:
