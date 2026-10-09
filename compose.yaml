@@ -4,8 +4,8 @@
     container_name: rabotyagi_db
     restart: always
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-12345678}
       POSTGRES_DB: rabotyagi_db
     ports:
       - "5432:5432"
@@ -14,13 +14,14 @@
     networks:
       - app_network
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d rabotyagi_db" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d rabotyagi_db" ]
       interval: 5s
       timeout: 3s
       retries: 5
       
   rabotyagi:
     image: rabotyagi
+    restart: unless-stopped
     build:
       context: .
       dockerfile: rabotyagi/Dockerfile
@@ -29,10 +30,40 @@
     networks:
       - app_network
     environment:
-      - ASPNETCORE_ENVIRONMENT=Production
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS: "8080"
+      ConnectionStrings__ProductionConnection: "Host=postgres;Port=5432;Database=rabotyagi_db;Username=${POSTGRES_USER:-admin};Password=${POSTGRES_PASSWORD:-12345678}"
+      Uploads__Path: /app/uploads
+      DataProtection__Path: /app/keys
+    volumes:
+      - report_photos:/app/uploads
+      - identity_keys:/app/keys
     depends_on:
       postgres:
         condition: service_healthy
+
+  frontend:
+    image: rabotyagi-frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      # BuildKit DNS fails for npm on this network; keep HTTPS hostname verification.
+      extra_hosts:
+        - "registry.npmjs.org=${NPM_REGISTRY_IP:-104.16.24.34}"
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    networks:
+      - app_network
+    depends_on:
+      rabotyagi:
+        condition: service_started
+    healthcheck:
+      test: [ "CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz" ]
+      interval: 15s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
 
 networks:
   app_network:
@@ -40,3 +71,5 @@ networks:
     
 volumes:
   postgres_data:
+  report_photos:
+  identity_keys:

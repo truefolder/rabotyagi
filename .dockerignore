@@ -23,3 +23,7 @@
 **/values.dev.yaml
 LICENSE
 README.md
+frontend/
+tests/
+.pnpm-store/
+!.dockerignore

@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using rabotyagi.API.Features.Account.DTOs;
@@ -16,7 +16,7 @@ public class AccountService(AppDbContext context, SignInManager<User> signInMana
     {
         var response = new ApiResponse();
         var userRole = await context.Roles.FirstOrDefaultAsync(x => x.Name == RolesConstants.UserRole);
-        
+
         var user = new User
         {
             Name = dto.Name,
@@ -24,8 +24,9 @@ public class AccountService(AppDbContext context, SignInManager<User> signInMana
             PhoneNumber = dto.PhoneNumber,
             Email = dto.Email,
             UserName = dto.Email,
+            RoleId = userRole!.Id,
         };
-        
+
         var result = await userManager.CreateAsync(user, dto.Password);
         if (!result.Succeeded)
         {
@@ -34,10 +35,13 @@ public class AccountService(AppDbContext context, SignInManager<User> signInMana
                 .WithStatusCode(HttpStatusCode.BadRequest)
                 .WithErrorMsg(string.Join(',', errors));
         }
-        
-        await userManager.AddToRoleAsync(user, userRole!.Name!);
+
+        var roleResult = await userManager.AddToRoleAsync(user, userRole!.Name!);
+        if (!roleResult.Succeeded)
+            return response.WithStatusCode(HttpStatusCode.BadRequest)
+                .WithErrorMsg(string.Join(", ", roleResult.Errors.Select(x => x.Description)));
         await signInManager.SignInAsync(user, dto.IsPersistent);
-        
+
         return response.WithStatusCode(HttpStatusCode.OK);
     }
 
@@ -51,7 +55,7 @@ public class AccountService(AppDbContext context, SignInManager<User> signInMana
                 .WithStatusCode(HttpStatusCode.BadRequest)
                 .WithErrorMsg("User not found");
         }
-        
+
         var result = await signInManager.PasswordSignInAsync(user, dto.Password,
             dto.IsPersistent, false);
         if (!result.Succeeded)
@@ -63,7 +67,7 @@ public class AccountService(AppDbContext context, SignInManager<User> signInMana
 
         return response.WithStatusCode(HttpStatusCode.OK);
     }
-    
+
     public async Task<ApiResponse> LogOut()
     {
         await signInManager.SignOutAsync();
@@ -81,6 +85,7 @@ public class AccountService(AppDbContext context, SignInManager<User> signInMana
         if (user == null)
             return response.WithStatusCode(HttpStatusCode.NotFound).WithErrorMsg("User not found");
 
+        var roles = await userManager.GetRolesAsync(user);
         var dto = new AccountInfoDto
         {
             Id = user.Id,
@@ -88,8 +93,11 @@ public class AccountService(AppDbContext context, SignInManager<User> signInMana
             Name = user.Name,
             Surname = user.Surname,
             PhoneNumber = user.PhoneNumber,
+            RoleName = roles.FirstOrDefault() ?? RolesConstants.UserRole,
+            Roles = roles,
+            AvailableUntil = user.AvailableUntil,
             Address = user.Address == null
-                ? new AddressItemDto()
+                ? null
                 : new AddressItemDto
                 {
                     Id = user.Address.Id,
@@ -115,7 +123,10 @@ public class AccountService(AppDbContext context, SignInManager<User> signInMana
         if (user == null)
             return response.WithStatusCode(HttpStatusCode.NotFound).WithErrorMsg("User not found");
 
-        await userManager.ChangePasswordAsync(user, dto.OldPassword, dto.NewPassword);
+        var result = await userManager.ChangePasswordAsync(user, dto.OldPassword, dto.NewPassword);
+
+        if (!result.Succeeded)
+            return response.WithStatusCode(HttpStatusCode.BadRequest).WithErrorMsg(string.Join(", ", result.Errors.Select(x => x.Description)));
         await userManager.UpdateSecurityStampAsync(user);
         await signInManager.RefreshSignInAsync(user);
 

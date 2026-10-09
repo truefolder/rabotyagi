@@ -18,6 +18,9 @@ ARG BUILD_CONFIGURATION=Release
 RUN dotnet publish "./rabotyagi.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
 FROM base AS final
+USER root
+RUN mkdir -p /app/uploads /app/keys && chown -R $APP_UID:$APP_UID /app/uploads /app/keys
+USER $APP_UID
 WORKDIR /app
 COPY --from=publish /app/publish .
 ENTRYPOINT ["dotnet", "rabotyagi.dll"]
